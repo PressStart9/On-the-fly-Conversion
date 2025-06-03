@@ -6,11 +6,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "../convertion.h"
+#include "../conversion.h"
 
-struct txt_to_md {
-  static convertion_mapping get_mapping() {
-    return { { "txt", "md" }, txt_to_md::convert };
+struct txt2md {
+  static conversion_mapping get_mapping() {
+    return { { "txt", "md" }, txt2md::convert };
   }
 
   static int convert(const char* from_file, const char* to_file) {

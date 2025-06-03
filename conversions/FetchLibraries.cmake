@@ -12,9 +12,9 @@ FetchContent_MakeAvailable(stb)
 add_library(
     stb_lib INTERFACE
 )
-target_include_directories(stb_lib INTERFACE stb_SOURCE_DIR)
+target_include_directories(stb_lib INTERFACE ${stb_SOURCE_DIR})
 
 set(
-    CONVERTION_LIBRARIES
+    conversion_LIBRARIES
     stb_lib
 )

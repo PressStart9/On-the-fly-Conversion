@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <string_view>
+#include <functional>
 
 struct CharPointerComp {
   bool operator()(const char* p1, const char* p2) const {
@@ -34,4 +35,4 @@ struct hash<Convertation> {
 
 }  // namespace std
 
-using convertion_mapping = typename std::pair<Convertation, std::function<void(const char* from_file, const char* to_file)>>;
+using conversion_mapping = typename std::pair<Convertation, std::function<int(const char* from_file, const char* to_file)>>;

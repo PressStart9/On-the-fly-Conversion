@@ -9,8 +9,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "convertion.h"
-#include "convertions/txt_to_md.h"
+#include "conversion.h"
+#include "conversions/txt2md.h"
+#include "conversions/png2jpg.h"
+#include "conversions/jpg2png.h"
 
 #pragma region Config
 
@@ -41,9 +43,10 @@ static struct fuse_opt fs_opts[] = {
     is_full_original = false;                                             \
     from_ext = strrchr(orig_path, '.');                                   \
     if (!from_ext) { return -ENOENT; }                                    \
+    ++from_ext;                                                           \
     to_ext = full_path + (from_ext - orig_path);                          \
-    auto rev_conv = possible_reverse_convertions.find(from_ext);          \
-    if (rev_conv == possible_reverse_convertions.end()) {                 \
+    auto rev_conv = possible_reverse_conversions.find(from_ext);          \
+    if (rev_conv == possible_reverse_conversions.end()) {                 \
       return -ENOENT;                                                     \
     }                                                                     \
                                                                           \
@@ -62,28 +65,28 @@ static struct fuse_opt fs_opts[] = {
 
 #pragma endregion  // Config
 
-#pragma region Convertions
+#pragma region conversions
 
 std::unordered_map<const char*, std::vector<const char*>, CharPointerComp,
                    CharPointerComp>
-    possible_reverse_convertions;
+    possible_reverse_conversions;
 
 std::unordered_map<const char*, std::vector<const char*>, CharPointerComp,
                    CharPointerComp>
-    possible_convertions;
+    possible_conversions;
 
 std::unordered_map<Convertation, std::function<void(const char* from_file,
                                                     const char* to_file)>>
-    convertion_functions;
+    conversion_functions;
 
-#pragma endregion  // Convertions
+#pragma endregion  // conversions
 
 #pragma region FuseOperations
 
 static int fs_getattr(const char* path, struct stat* stbuf) {
-  std::cout << "--getattr   " << std::endl;
+//  std::cout << "--getattr   " << std::endl;
   FIND_ORIGINAL_PATH(path);
-  std::cout << '\t' << orig_path << std::endl;
+//  std::cout << '\t' << orig_path << std::endl;
 
   if (is_full_original) {
     return lstat(full_path, stbuf) == -1 ? -errno : 0;
@@ -111,11 +114,11 @@ static int fs_getattr(const char* path, struct stat* stbuf) {
 }
 
 static int fs_open(const char* path, struct fuse_file_info* fi) {
-  std::cout << "--open   " << path << std::endl;
+//  std::cout << "--open   " << path << std::endl;
   FIND_ORIGINAL_PATH(path);
   if (!is_full_original) {
-    auto func = convertion_functions.find({from_ext, to_ext});
-    if (func == convertion_functions.end()) {
+    auto func = conversion_functions.find({from_ext, to_ext});
+    if (func == conversion_functions.end()) {
       return -ENOENT;
     }
 
@@ -134,7 +137,7 @@ static int fs_open(const char* path, struct fuse_file_info* fi) {
 
 static int fs_read(const char* path, char* buf, size_t size, off_t offset,
                    struct fuse_file_info* fi) {
-  std::cout << "--read   " << path << std::endl;
+//  std::cout << "--read   " << path << std::endl;
   int ret = lseek(fi->fh, offset, SEEK_SET);
   if (ret == -1) {
     return -errno;
@@ -146,14 +149,14 @@ static int fs_read(const char* path, char* buf, size_t size, off_t offset,
 }
 
 static int fs_release(const char* path, struct fuse_file_info* fi) {
-  std::cout << "--release" << std::endl;
+//  std::cout << "--release" << std::endl;
   int ret = close(fi->fh);
   return ret == -1 ? -errno : ret;
 }
 
 static int fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler,
                       off_t offset, fuse_file_info* fi) {
-  std::cout << "--readdir   " << path << std::endl;
+//  std::cout << "--readdir   " << path << std::endl;
   FULL_PATH(path);
   DIR* dr = opendir(full_path);
   if (!dr) {
@@ -173,20 +176,24 @@ static int fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler,
             PATH_MAX + item_path - item_diff_start);
     char* item_ext_diff_start = strrchr(item_path, '.');
     if (!item_ext_diff_start) { continue; }
-    auto poss_conv = possible_convertions.find(item_ext_diff_start);
-    if (poss_conv == possible_convertions.end()) {
+    ++item_ext_diff_start;
+    auto poss_conv = possible_conversions.find(item_ext_diff_start);
+    if (poss_conv == possible_conversions.end()) {
       continue;
     }
     for (auto ext : poss_conv->second) {
-      strncpy(item_ext_diff_start, ext, PATH_MAX + item_path - item_diff_start);
+      strncpy(item_ext_diff_start, ext, PATH_MAX + item_path - item_ext_diff_start);
       if (access(item_path, F_OK) == F_OK) {
         continue;
       }
-      if (filler(buf, item_diff_start, nullptr, 0) == -1) {
+      int fc = filler(buf, item_diff_start, nullptr, 0);
+      if (fc == -1) {
         break;
       }
     }
   }
+
+  closedir(dr);
 
   return 0;
 }
@@ -432,17 +439,19 @@ int main(int argc, char** argv) {
     throw std::runtime_error("Original directory is not specified.");
   }
 
-  std::cout << "Original directory: " << config.original_dir << std::endl;
+//  std::cout << "Original directory: " << config.original_dir << std::endl;
 
   std::array mappings{
-      txt_to_md::get_mapping(),
+      txt2md::get_mapping(),
+      png2jpg::get_mapping(),
+      jpg2png::get_mapping(),
   };
 
-  for (convertion_mapping& mapping : mappings) {
-    possible_convertions[mapping.first.from].push_back(mapping.first.to);
-    possible_reverse_convertions[mapping.first.to].push_back(
+  for (conversion_mapping& mapping : mappings) {
+    possible_conversions[mapping.first.from].push_back(mapping.first.to);
+    possible_reverse_conversions[mapping.first.to].push_back(
         mapping.first.from);
-    convertion_functions[mapping.first] = mapping.second;
+    conversion_functions[mapping.first] = mapping.second;
   }
 
   int ret =
@@ -450,7 +459,7 @@ int main(int argc, char** argv) {
 
   fuse_opt_free_args(&args);
 
-  std::cout << "Finish working." << std::endl;
+//  std::cout << "Finish working." << std::endl;
 
   return ret;
 }
